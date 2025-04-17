@@ -1,0 +1,157 @@
+That’s a great move, Charan! 💡 Let’s break down **all the steps to implement this watermarking method** (PPLU + Arnold Transform + Wavelet domain embedding), and the **outputs** you should show to validate your implementation — just like in the paper.
+
+---
+
+## ✅ Overview of Your Implementation Pipeline:
+
+### 🟠 INPUT:
+- **Cover Image** `C` (e.g. Lena, 512×512)
+- **Watermark Image** `W` (e.g. DDNT logo, 256×256)
+
+---
+
+## 🔧 Step-by-Step Implementation
+
+### 🔹 1. **Preprocess Inputs**
+- Convert both `C` and `W` to grayscale
+- Normalize pixel values between 0–1 or 0–255 as needed
+
+---
+
+### 🔹 2. **PPLU Decomposition of Watermark**
+- Compute:
+  \[
+  P_w W = L_w U_w
+  \]
+- Store:
+  - `Lw`, `Uw` (matrices)
+  - `Pw` (permutation matrix → your **security key** 🔐)
+
+---
+
+### 🔹 3. **Scramble LU Using Arnold Transform**
+- Compute:
+  \[
+  D_W = \text{ArnoldTransform}(L_w U_w, m)
+  \]
+- Choose `m` (e.g. 4 iterations)
+- Save `D_W` (scrambled watermark matrix)
+
+---
+
+### 🔹 4. **Apply 1-Level DWT to Cover Image**
+- Use DWT (e.g. Haar wavelet):
+  \[
+  C \rightarrow \{C_{ll}^{(j-1)}, C_{lh}^{(j-1)}, C_{hl}^{(j-1)}, C_{hh}^{(j-1)}\}
+  \]
+
+---
+
+### 🔹 5. **Embed Watermark into LL & HH Bands**
+- Choose strength factor: `C = 0.075` (from paper)
+- Compute scaling factor `α`:
+  \[
+  \alpha = \frac{\|C_{ll}\|}{\max(C_{ll})} \cdot C
+  \]
+- Embed:
+  \[
+  \tilde{C}_{ll} = C_{ll} + \alpha D_W  
+  \quad\quad
+  \tilde{C}_{hh} = C_{hh} + \alpha D_W
+  \]
+
+---
+
+### 🔹 6. **Reconstruct Watermarked Image using IDWT**
+\[
+\tilde{C} = \text{IDWT}(\tilde{C}_{ll}, C_{lh}, C_{hl}, \tilde{C}_{hh})
+\]
+
+---
+
+## 🟢 At This Point: Save & Display
+- ✅ Original Cover Image
+- ✅ Original Watermark
+- ✅ Scrambled Watermark (D_W)
+- ✅ Watermarked Image
+
+---
+
+## 🔁 Step-by-Step Extraction
+
+### 🔹 7. **Apply 1-Level DWT to Watermarked Image**
+Get:
+- \( \tilde{C}_{ll}, \tilde{C}_{hh} \)
+
+### 🔹 8. **Extract Watermark**
+\[
+D_{W1} = \frac{\tilde{C}_{ll} - C_{ll}}{\alpha}, \quad
+D_{W2} = \frac{\tilde{C}_{hh} - C_{hh}}{\alpha}
+\]
+
+---
+
+### 🔹 9. **Apply Inverse Arnold Transform**
+\[
+\text{Recovered LU} = \text{InverseArnold}(D_W, m)
+\]
+
+---
+
+### 🔹 10. **Reconstruct Watermark Using Key \(P_w\)**
+\[
+W_{extracted} = P_w^{-1} \cdot LU
+\]
+
+Do this for both `D_W1` and `D_W2`
+
+---
+
+## 📊 Evaluation Results to Display
+
+### 🔸 1. **PSNR**
+\[
+\text{PSNR}(C, \tilde{C}) \quad 
+\]
+
+### 🔸 2. **CC (Correlation Coefficient)**  
+\[
+\text{CC}(W, W_{extracted}) \quad 
+\]
+
+### 🔸 3. **Visual Output**
+- Original watermark
+- Watermarked image
+- Extracted watermark from LL and HH
+
+---
+
+## Add Attacks to Test Robustness
+- JPEG compression
+- Gaussian noise
+- Resizing
+- Cropping
+- Histogram equalization
+
+Then, extract and evaluate watermark again using CC.
+
+---
+
+## 📁 Summary of Implementation Flow
+
+```
+Input → PPLU Decomp → Arnold Transform → Embed in DWT → IDWT → Watermarked Image
+↓
+DWT of Watermarked → Extract DW → Inverse AT → Apply Pw → Extracted Watermark
+↓
+Evaluate PSNR + CC
+```
+
+---
+
+Let me know if you want:
+- ✅ Sample images or code (Python or MATLAB)
+- ✅ Help with writing the PPLU decomposition
+- ✅ Help with Arnold Transform functions
+
+I'm ready to help you get started hands-on!
