@@ -124,6 +124,10 @@ def extract_watermark_dwt(watermarked_image, original_image, P, alpha=0.075, wav
     descrambled_LL = inverse_arnold_transform(scrambled_watermark_LL, iterations)
     descrambled_HH = inverse_arnold_transform(scrambled_watermark_HH, iterations)
 
+    # Ensure dimensions match for matrix multiplication
+    descrambled_LL = cv2.resize(descrambled_LL, (P.shape[1], P.shape[0]))
+    descrambled_HH = cv2.resize(descrambled_HH, (P.shape[1], P.shape[0]))
+
     extracted_watermark_LL = np.matmul(P, descrambled_LL)
     extracted_watermark_HH = np.matmul(P, descrambled_HH)
 
@@ -147,7 +151,16 @@ def extract_watermark_svd(watermarked_image, original_image, svd_data, alpha=0.0
 
     # Extract watermark
     extracted_watermark = (S_w - S_original) / alpha
-    extracted_watermark = extracted_watermark[:256*256].reshape(256, 256)
+
+    # Dynamically calculate the largest possible square dimensions
+    actual_size = extracted_watermark.size
+    side_length = int(np.ceil(np.sqrt(actual_size)))
+
+    # Pad the extracted watermark with zeros if necessary
+    padded_watermark = np.zeros((side_length * side_length,))
+    padded_watermark[:actual_size] = extracted_watermark
+
+    extracted_watermark = padded_watermark.reshape(side_length, side_length)
     extracted_watermark = (extracted_watermark - np.min(extracted_watermark)) / (np.max(extracted_watermark) - np.min(extracted_watermark))
 
     return extracted_watermark
@@ -293,8 +306,8 @@ def main():
                 attacked_image = gamma_attack(watermarked_image)
             elif attack_type == "Cropping":
                 attacked_image = crop_attack(watermarked_image)
-            # elif attack_type == "Rotation":
-            #     attacked_image = rotation_attack(watermarked_image)
+            elif attack_type == "Rotation":
+                attacked_image = rotation_attack(watermarked_image)
 
         # Extract watermark
         if method == "DWT":
@@ -315,7 +328,9 @@ def main():
             cc_LL = calculate_cc(normalized_watermark, extracted_LL)
             cc_HH = calculate_cc(normalized_watermark, extracted_HH)
         else:
-            cc_svd = calculate_cc(normalized_watermark, extracted_svd)
+            # Resize extracted watermark to match original watermark dimensions
+            extracted_svd_resized = cv2.resize(extracted_svd, (normalized_watermark.shape[1], normalized_watermark.shape[0]))
+            cc_svd = calculate_cc(normalized_watermark, extracted_svd_resized)
 
         # Display results
         st.subheader("Watermarking Results")
@@ -344,7 +359,7 @@ def main():
             with col2:
                 st.image(extracted_HH, caption=f"Extracted from HH Band (CC: {cc_HH:.4f})", clamp=True)
         else:
-            st.image(extracted_svd, caption=f"Extracted using SVD (CC: {cc_svd:.4f})", clamp=True)
+            st.image(extracted_svd_resized, caption=f"Extracted using SVD (CC: {cc_svd:.4f})", clamp=True)
 
         # Display metrics
         st.subheader("Performance Metrics")
@@ -387,7 +402,7 @@ def main():
                     mime="image/png"
                 )
             else:
-                _, encoded_extracted = cv2.imencode('.png', (extracted_svd * 255).astype(np.uint8))
+                _, encoded_extracted = cv2.imencode('.png', (extracted_svd_resized * 255).astype(np.uint8))
                 st.download_button(
                     label="Download Extracted Watermark",
                     data=BytesIO(encoded_extracted.tobytes()),
