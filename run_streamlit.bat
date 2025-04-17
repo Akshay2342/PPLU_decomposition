@@ -1,0 +1,3 @@
+@echo off
+echo Starting Digital Watermarking Web Application...
+python -m streamlit run web.py

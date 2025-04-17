@@ -59,6 +59,9 @@ def embed_watermark(cover_image, watermark_image, alpha=0.075):
     else:
         watermark_gray = watermark_image.copy()
     
+    # Resize watermark to be smaller than cover image
+    watermark_gray = cv2.resize(watermark_gray, (256, 256))
+    
     # Normalize images to [0, 1]
     cover_image_norm = cover_image_gray / 255.0
     watermark_norm = watermark_gray / 255.0
@@ -157,63 +160,48 @@ def calculate_cc(original_watermark, extracted_watermark):
     cc, _ = pearsonr(original_flat, extracted_flat)
     return cc
 
-# Attack functions
-
-# JPEG Compression
+# Attack functions (same as before)
 def jpeg_attack(image, quality=70):
-    # Encode as JPEG with specified quality
     _, encoded_image = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, quality])
-    # Decode back to image
     attacked_image = cv2.imdecode(encoded_image, cv2.IMREAD_GRAYSCALE)
     return attacked_image
 
-# Gaussian Noise
 def noise_attack(image, mean=0, sigma=10):
     noise = np.random.normal(mean, sigma, image.shape).astype(np.int32)
     attacked_image = np.clip(image + noise, 0, 255).astype(np.uint8)
     return attacked_image
 
-# Rescaling (resize)
 def rescale_attack(image, scale_factor=0.5):
-    # Resize down
     h, w = image.shape[:2]
     resized_down = cv2.resize(image, (int(w*scale_factor), int(h*scale_factor)))
-    # Resize back to original size
     attacked_image = cv2.resize(resized_down, (w, h))
     return attacked_image
 
-# Blurring
 def blur_attack(image, kernel_size=5):
     attacked_image = cv2.GaussianBlur(image, (kernel_size, kernel_size), 0)
     return attacked_image
 
-# Histogram Equalization
 def histogram_attack(image):
     attacked_image = cv2.equalizeHist(image)
     return attacked_image
 
-# Contrast Adjustment
 def contrast_attack(image, alpha=1.5, beta=10):
     attacked_image = np.clip(alpha * image + beta, 0, 255).astype(np.uint8)
     return attacked_image
 
-# Gamma Correction
 def gamma_attack(image, gamma=1.5):
     inv_gamma = 1.0 / gamma
     table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
     attacked_image = cv2.LUT(image, table)
     return attacked_image
 
-# Cropping
 def crop_attack(image, crop_ratio=0.25):
     h, w = image.shape[:2]
-    # Crop from corner
     crop_h, crop_w = int(h * crop_ratio), int(w * crop_ratio)
     attacked_image = image.copy()
-    attacked_image[0:crop_h, 0:crop_w] = 0  # Set to black (corner crop)
+    attacked_image[0:crop_h, 0:crop_w] = 0
     return attacked_image
 
-# Rotation
 def rotation_attack(image, angle=45):
     h, w = image.shape[:2]
     center = (w // 2, h // 2)
@@ -221,32 +209,24 @@ def rotation_attack(image, angle=45):
     attacked_image = cv2.warpAffine(image, rotation_matrix, (w, h), flags=cv2.INTER_LINEAR)
     return attacked_image
 
-
-# Main testing function
+# Main testing function with enhanced visualization
 def test_watermarking_system():
-    # For demonstration, I'll create synthetic images
-    # In a real scenario, you would load your images:
-    # cover_image = cv2.imread('lena.png', cv2.IMREAD_GRAYSCALE)
-    # watermark_image = cv2.imread('watermark.png', cv2.IMREAD_GRAYSCALE)
+    # Load images
+    cover_image = cv2.imread('lena.png')
+    watermark_image = cv2.imread('logo-1.png')
     
-    # Create synthetic cover image and watermark for demonstration
-    cover_image = np.zeros((512, 512), dtype=np.uint8)
-    # Create a gradient pattern
-    for i in range(512):
-        for j in range(512):
-            cover_image[i, j] = (i + j) % 256
-    
-    # Create a simple watermark (could be a logo or text)
-    watermark_image = np.zeros((256, 256), dtype=np.uint8)
-    cv2.putText(watermark_image, "WATERMARK", (30, 128), 
-                cv2.FONT_HERSHEY_COMPLEX, 2, 255, 2)
+    if cover_image is None:
+        raise FileNotFoundError("Cover image 'lena.png' not found. Please provide the image.")
+    if watermark_image is None:
+        raise FileNotFoundError("Watermark image 'logo.png' not found. Please provide the image.")
     
     # Embed watermark
     alpha = 0.075  # Strength factor as per paper
     watermarked_image, P = embed_watermark(cover_image, watermark_image, alpha)
     
     # Calculate PSNR
-    psnr_value = calculate_psnr(cover_image, watermarked_image)
+    psnr_value = calculate_psnr(cv2.cvtColor(cover_image, cv2.COLOR_BGR2GRAY), 
+                               cv2.cvtColor(watermarked_image, cv2.COLOR_BGR2GRAY) if len(watermarked_image.shape) > 2 else watermarked_image)
     print(f"PSNR of watermarked image: {psnr_value:.2f} dB")
     
     # Create dictionary of attack functions
@@ -262,8 +242,15 @@ def test_watermarking_system():
         "Rotation (45°)": lambda img: rotation_attack(img, angle=45)
     }
     
-    # Dictionary to store CC values
-    cc_values = {"LL": {}, "HH": {}}
+    # Dictionary to store results
+    results = {
+        "cover_image": cover_image,
+        "watermark_image": watermark_image,
+        "watermarked_image": watermarked_image,
+        "permutation_matrix": P,
+        "psnr": psnr_value,
+        "attacks": {}
+    }
     
     # Test each attack
     for attack_name, attack_func in attacks.items():
@@ -276,78 +263,96 @@ def test_watermarking_system():
         extracted_LL, extracted_HH = extract_watermark(attacked_image, cover_image, P, alpha)
         
         # Calculate CC for both extracted watermarks
-        normalized_watermark = watermark_image / 255.0
+        watermark_gray = cv2.cvtColor(watermark_image, cv2.COLOR_BGR2GRAY) if len(watermark_image.shape) > 2 else watermark_image
+        watermark_gray = cv2.resize(watermark_gray, (256, 256))
+        normalized_watermark = watermark_gray / 255.0
         cc_LL = calculate_cc(normalized_watermark, extracted_LL)
         cc_HH = calculate_cc(normalized_watermark, extracted_HH)
         
-        # Store CC values
-        cc_values["LL"][attack_name] = cc_LL
-        cc_values["HH"][attack_name] = cc_HH
+        # Store results
+        results["attacks"][attack_name] = {
+            "attacked_image": attacked_image,
+            "extracted_LL": extracted_LL,
+            "extracted_HH": extracted_HH,
+            "cc_LL": cc_LL,
+            "cc_HH": cc_HH
+        }
         
         print(f"  CC from LL band: {cc_LL:.4f}")
         print(f"  CC from HH band: {cc_HH:.4f}")
     
-    # Print summary table of CC values
-    print("\n--- Correlation Coefficient (CC) Summary ---")
-    print(f"{'Attack Type':<25} {'CC from LL':<15} {'CC from HH':<15}")
-    print("-" * 55)
+    # Visualize results
+    visualize_results(results)
     
-    for attack_name in attacks.keys():
-        print(f"{attack_name:<25} {cc_values['LL'][attack_name]:<15.4f} {cc_values['HH'][attack_name]:<15.4f}")
-    
-    # Return the results for any further processing
-    return {
-        "cover_image": cover_image,
-        "watermark_image": watermark_image,
-        "watermarked_image": watermarked_image,
-        "permutation_matrix": P,
-        "psnr": psnr_value,
-        "cc_values": cc_values
-    }
-
-# Run the test
-results = test_watermarking_system()
+    return results
 
 def visualize_results(results):
     # Create a figure to show original, watermark and watermarked images
-    plt.figure(figsize=(15, 5))
+    plt.figure(figsize=(18, 6))
     
-    plt.subplot(131)
-    plt.imshow(results["cover_image"], cmap='gray')
+    # Original cover image
+    plt.subplot(1, 3, 1)
+    if len(results["cover_image"].shape) == 3:
+        plt.imshow(cv2.cvtColor(results["cover_image"], cv2.COLOR_BGR2RGB))
+    else:
+        plt.imshow(results["cover_image"], cmap='gray')
     plt.title("Original Cover Image")
     plt.axis('off')
     
-    plt.subplot(132)
-    plt.imshow(results["watermark_image"], cmap='gray')
+    # Original watermark
+    plt.subplot(1, 3, 2)
+    if len(results["watermark_image"].shape) == 3:
+        plt.imshow(cv2.cvtColor(results["watermark_image"], cv2.COLOR_BGR2RGB))
+    else:
+        plt.imshow(results["watermark_image"], cmap='gray')
     plt.title("Original Watermark")
     plt.axis('off')
     
-    plt.subplot(133)
-    plt.imshow(results["watermarked_image"], cmap='gray')
+    # Watermarked image
+    plt.subplot(1, 3, 3)
+    if len(results["watermarked_image"].shape) == 3:
+        plt.imshow(cv2.cvtColor(results["watermarked_image"], cv2.COLOR_BGR2RGB))
+    else:
+        plt.imshow(results["watermarked_image"], cmap='gray')
     plt.title(f"Watermarked Image\nPSNR: {results['psnr']:.2f} dB")
     plt.axis('off')
     
     plt.tight_layout()
     plt.show()
     
-    # Create a figure to show attack results
-    attacks = list(results["cc_values"]["LL"].keys())
+    # Create figures for each attack
+    attacks = list(results["attacks"].keys())
     n_attacks = len(attacks)
-    n_cols = 3
-    n_rows = (n_attacks + n_cols - 1) // n_cols
     
-    plt.figure(figsize=(15, 5 * n_rows))
-    
-    for i, attack_name in enumerate(attacks):
-        # Get extracted watermarks for this attack
-        # We would need to store these during the test, or recalculate them here
+    for attack_name in attacks:
+        attack_data = results["attacks"][attack_name]
         
-        plt.subplot(n_rows, n_cols, i + 1)
-        plt.title(f"{attack_name}\nCC_LL: {results['cc_values']['LL'][attack_name]:.4f}\nCC_HH: {results['cc_values']['HH'][attack_name]:.4f}")
+        plt.figure(figsize=(18, 6))
+        plt.suptitle(f"Attack: {attack_name}\nCC (LL): {attack_data['cc_LL']:.4f}, CC (HH): {attack_data['cc_HH']:.4f}", y=1.05)
+        
+        # Attacked image
+        plt.subplot(1, 3, 1)
+        if len(attack_data["attacked_image"].shape) == 3:
+            plt.imshow(cv2.cvtColor(attack_data["attacked_image"], cv2.COLOR_BGR2RGB))
+        else:
+            plt.imshow(attack_data["attacked_image"], cmap='gray')
+        plt.title("Attacked Image")
         plt.axis('off')
-    
-    plt.tight_layout()
-    plt.show()
+        
+        # Extracted watermark from LL
+        plt.subplot(1, 3, 2)
+        plt.imshow(attack_data["extracted_LL"], cmap='gray')
+        plt.title(f"Extracted from LL\nCC: {attack_data['cc_LL']:.4f}")
+        plt.axis('off')
+        
+        # Extracted watermark from HH
+        plt.subplot(1, 3, 3)
+        plt.imshow(attack_data["extracted_HH"], cmap='gray')
+        plt.title(f"Extracted from HH\nCC: {attack_data['cc_HH']:.4f}")
+        plt.axis('off')
+        
+        plt.tight_layout()
+        plt.show()
     
     # Create bar graph for CC values
     plt.figure(figsize=(15, 8))
@@ -355,8 +360,8 @@ def visualize_results(results):
     x = np.arange(len(attacks))
     width = 0.35
     
-    plt.bar(x - width/2, [results["cc_values"]["LL"][attack] for attack in attacks], width, label='LL Band')
-    plt.bar(x + width/2, [results["cc_values"]["HH"][attack] for attack in attacks], width, label='HH Band')
+    plt.bar(x - width/2, [results["attacks"][attack]["cc_LL"] for attack in attacks], width, label='LL Band')
+    plt.bar(x + width/2, [results["attacks"][attack]["cc_HH"] for attack in attacks], width, label='HH Band')
     
     plt.ylabel('Correlation Coefficient (CC)')
     plt.title('Robustness Against Various Attacks')
@@ -366,5 +371,5 @@ def visualize_results(results):
     plt.tight_layout()
     plt.show()
 
-# Visualize the results
-visualize_results(results)
+# Run the test
+results = test_watermarking_system()
